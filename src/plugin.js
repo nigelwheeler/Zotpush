@@ -1,11 +1,16 @@
 /* global ZoteroObsidianCore, Cc, Ci */
 var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
-  constructor(ZoteroAPI, ServicesAPI, core) {
+  constructor(ZoteroAPI, ServicesAPI, core, addonId = "zotero-obsidian-readonly@example.com") {
     this.Zotero = ZoteroAPI;
     this.Services = ServicesAPI;
     this.core = core;
-    this.toolsMenuID = "zotero-obsidian-readonly-export-tools";
-    this.contextMenuID = "zotero-obsidian-readonly-export-context";
+    const idPrefix = addonId.replace(/[^a-zA-Z0-9_-]/g, "-");
+    this.isDevelopment = addonId === "zotpush-md-dev@local";
+    const suffix = this.isDevelopment ? " (Development)" : "";
+    this.toolsMenuID = `${idPrefix}-zotpush-export-tools`;
+    this.contextMenuID = `${idPrefix}-zotpush-export-context`;
+    this.menuLabel = `Push selezione in Markdown…${suffix}`;
+    this.addonName = `ZotPush MD${suffix}`;
     this.windows = new Set();
   }
 
@@ -23,7 +28,7 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     if (!popup) return;
     const item = win.document.createXULElement("menuitem");
     item.id = this.toolsMenuID;
-    item.setAttribute("label", "Push selezione in Markdown…");
+    item.setAttribute("label", this.menuLabel);
     item.addEventListener("command", () => this.exportSelection(win));
     popup.appendChild(item);
 
@@ -31,7 +36,7 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     if (contextPopup) {
       const contextItem = win.document.createXULElement("menuitem");
       contextItem.id = this.contextMenuID;
-      contextItem.setAttribute("label", "Push selezione in Markdown…");
+      contextItem.setAttribute("label", this.menuLabel);
       contextItem.addEventListener("command", () => this.exportSelection(win));
       const updateVisibility = () => {
         const hasRegularItem = win.ZoteroPane.getSelectedItems()
@@ -61,7 +66,7 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
 
   async chooseDirectory(win) {
     const picker = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-    picker.init(win.browsingContext, "Scegli la cartella di destinazione Markdown", Ci.nsIFilePicker.modeGetFolder);
+    picker.init(win.browsingContext, `Scegli la cartella di destinazione Markdown${this.isDevelopment ? " (Development)" : ""}`, Ci.nsIFilePicker.modeGetFolder);
     const result = await new Promise(resolve => picker.open(resolve));
     if (result !== Ci.nsIFilePicker.returnOK) return null;
     return picker.file.path;
@@ -165,6 +170,6 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
   }
 
   alert(win, message) {
-    this.Services.prompt.alert(win, "ZotPush MD", message);
+    this.Services.prompt.alert(win, this.addonName, message);
   }
 };
