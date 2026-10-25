@@ -8,56 +8,46 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     const idPrefix = addonId.replace(/[^a-zA-Z0-9_-]/g, "-");
     this.toolsMenuID = `${idPrefix}-zotpush-export-tools`;
     this.contextMenuID = `${idPrefix}-zotpush-export-context`;
-    this.languageMenuID = `${idPrefix}-zotpush-language`;
-    this.languagePref = `extensions.zotero.zotpush.${idPrefix}.language`;
+    this.languagePref = "extensions.zotero.zotpush.language";
     this.isDevelopment = addonId === "zotpush-md-dev@local";
-    this.languageItems = new Map();
+    this.languageObserver = {
+      observe: (_subject, topic, preference) => {
+        if (topic !== "nsPref:changed" || preference !== this.languagePref) return;
+        this.updateLanguage();
+        for (const win of this.windows) this.updateWindowLabels(win);
+      }
+    };
+    this.updateLanguage();
+    this.windows = new Set();
+  }
+
+  updateLanguage() {
     try {
       const savedLanguage = this.Services.prefs.getStringPref(this.languagePref, "auto");
       this.languageSetting = ["auto", "en", "it"].includes(savedLanguage) ? savedLanguage : "auto";
     } catch {
       this.languageSetting = "auto";
     }
-    this.updateLanguage();
-    this.windows = new Set();
-  }
-
-  updateLanguage() {
     this.language = this.localization.resolveLanguage(this.languageSetting, this.Zotero.locale);
     this.strings = this.localization.getMessages(this.language);
     this.addonName = this.strings.addonName + (this.isDevelopment ? this.strings.developmentSuffix : "");
     this.exportMenuLabel = this.strings.exportMenu + (this.isDevelopment ? this.strings.developmentSuffix : "");
   }
 
-  setLanguage(language) {
-    if (!["auto", "en", "it"].includes(language)) return;
-    this.languageSetting = language;
-    this.Services.prefs.setStringPref(this.languagePref, language);
-    this.updateLanguage();
-    for (const win of this.windows) this.updateWindowLabels(win);
-  }
-
   updateWindowLabels(win) {
     const exportItem = win.document.getElementById(this.toolsMenuID);
     const contextItem = win.document.getElementById(this.contextMenuID);
-    const languageMenu = win.document.getElementById(this.languageMenuID);
     exportItem?.setAttribute("label", this.exportMenuLabel);
     contextItem?.setAttribute("label", this.exportMenuLabel);
-    languageMenu?.setAttribute("label", `${this.strings.languageMenu}${this.isDevelopment ? this.strings.developmentSuffix : ""}`);
-    for (const { language, item } of this.languageItems.get(win) || []) {
-      const label = language === "auto" ? this.strings.languageAutomatic
-        : language === "en" ? this.strings.languageEnglish
-          : this.strings.languageItalian;
-      item.setAttribute("label", label);
-      item.checked = this.languageSetting === language;
-    }
   }
 
   start() {
+    this.Services.prefs.addObserver(this.languagePref, this.languageObserver);
     for (const win of this.Zotero.getMainWindows()) this.addToWindow(win);
   }
 
   stop() {
+    this.Services.prefs.removeObserver(this.languagePref, this.languageObserver);
     for (const win of this.windows) this.removeFromWindow(win);
   }
 
@@ -70,23 +60,6 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     item.setAttribute("label", this.exportMenuLabel);
     item.addEventListener("command", () => this.exportSelection(win));
     popup.appendChild(item);
-
-    const languageMenu = win.document.createXULElement("menu");
-    languageMenu.id = this.languageMenuID;
-    const languagePopup = win.document.createXULElement("menupopup");
-    const languageItems = [];
-    for (const language of ["auto", "en", "it"]) {
-      const option = win.document.createXULElement("menuitem");
-      option.setAttribute("type", "radio");
-      option.setAttribute("name", this.languageMenuID);
-      option.value = language;
-      option.addEventListener("command", () => this.setLanguage(language));
-      languagePopup.appendChild(option);
-      languageItems.push({ language, item: option });
-    }
-    languageMenu.appendChild(languagePopup);
-    popup.appendChild(languageMenu);
-    this.languageItems.set(win, languageItems);
 
     const contextPopup = win.document.getElementById("zotero-itemmenu");
     if (contextPopup) {
@@ -109,7 +82,6 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
 
   removeFromWindow(win) {
     win?.document.getElementById(this.toolsMenuID)?.remove();
-    win?.document.getElementById(this.languageMenuID)?.remove();
     const contextItem = win?.document.getElementById(this.contextMenuID);
     const contextPopup = win?.document.getElementById("zotero-itemmenu");
     if (contextItem?._zoteroObsidianPopupHandler) {
@@ -119,7 +91,6 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       );
     }
     contextItem?.remove();
-    this.languageItems.delete(win);
     this.windows.delete(win);
   }
 

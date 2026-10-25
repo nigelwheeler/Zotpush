@@ -1,0 +1,19 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      onload="event.waitUntil(ZotpushPreferences.init(event))">
+  <groupbox>
+    <caption />
+    <vbox>
+      <label class="description" value="" />
+      <hbox align="center">
+        <label class="language-label" value="" />
+        <menulist flex="1" native="true">
+          <menupopup>
+            <menuitem value="auto" />
+            <menuitem value="en" />
+            <menuitem value="it" />
+          </menupopup>
+        </menulist>
+      </hbox>
+    </vbox>
+  </groupbox>
+</vbox>
