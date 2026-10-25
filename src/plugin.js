@@ -10,6 +10,9 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     this.contextMenuID = `${idPrefix}-zotpush-export-context`;
     this.languagePref = "extensions.zotero.zotpush.language";
     this.isDevelopment = addonId === "zotpush-md-dev@local";
+    if (!this.Services.prefs.prefHasUserValue(this.languagePref)) {
+      this.Services.prefs.setStringPref(this.languagePref, "auto");
+    }
     this.languageObserver = {
       observe: (_subject, topic, preference) => {
         if (topic !== "nsPref:changed" || preference !== this.languagePref) return;
