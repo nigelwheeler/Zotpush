@@ -164,8 +164,14 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     for (const attachment of this.Zotero.Items.get(item.getAttachments())) {
       for (const annotation of attachment.getAnnotations()) {
         const data = annotation.toJSON();
-        const position = typeof data.annotationPosition === "string"
-          ? JSON.parse(data.annotationPosition || "{}") : (data.annotationPosition || {});
+        let position = data.annotationPosition || {};
+        if (typeof position === "string") {
+          try {
+            position = JSON.parse(position || "{}") || {};
+          } catch {
+            position = {};
+          }
+        }
         let imageSourcePath = "";
         if (["image", "ink"].includes(data.annotationType) &&
             await this.Zotero.Annotations.hasCacheImage(annotation)) {

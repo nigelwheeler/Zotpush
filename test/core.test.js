@@ -112,5 +112,7 @@ assert.match(updated, /# Titolo aggiornato/);
 assert.match(updated, /Questa parte è mia\./);
 assert.throws(() => core.merge("contenuto estraneo", item, "ora", italian), error => error.message === italian.fileConflict);
 assert.equal(core.safeFilename('A/B: C?'), "A-B- C-");
+assert.equal(core.safeFilename('CON.txt'), "CON-item.txt");
+assert.equal(core.htmlToMarkdown("<p>It&apos;s &amp; fine</p>"), "It's & fine");
 
 console.log("Test core superati");

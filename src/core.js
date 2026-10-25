@@ -28,8 +28,14 @@ var ZoteroObsidianCore = (() => {
       .replace(/[\\/:*?\"<>|\u0000-\u001f]/g, "-")
       .replace(/\s+/g, " ")
       .replace(/[. ]+$/g, "")
-      .slice(0, 140);
-    return cleaned || fallback;
+      .replace(/\.+/g, ".")
+      .slice(0, 140)
+      .trim();
+    const extensionMatch = cleaned.match(/(\.[^./\\]+)$/);
+    const stem = extensionMatch ? cleaned.slice(0, -extensionMatch[1].length) : cleaned;
+    const reservedWindowsNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+    const safe = cleaned && reservedWindowsNames.test(stem) ? `${stem}-item${extensionMatch ? extensionMatch[1] : ""}` : cleaned;
+    return safe || fallback;
   }
 
   function htmlToMarkdown(value) {
@@ -43,7 +49,10 @@ var ZoteroObsidianCore = (() => {
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+      .replace(/&apos;/gi, "'")
+      .replace(/&#39;/gi, "'")
+      .replace(/&#x27;/gi, "'")
+      .replace(/&#x2F;/gi, "/")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   }
