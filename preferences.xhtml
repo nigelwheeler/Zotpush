@@ -1,16 +1,15 @@
-<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-      onload="event.waitUntil(ZotpushPreferences.init(event))">
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
   <groupbox>
-    <caption />
+    <caption label="Language settings / Impostazioni lingua" />
     <vbox>
-      <label class="description" value="" />
+      <label class="description" value="Automatic follows Zotero's language, with English as fallback. / Automatico segue la lingua di Zotero; inglese come ripiego." />
       <hbox align="center">
-        <label class="language-label" value="" />
-        <menulist flex="1" native="true">
+        <label class="language-label" value="Language / Lingua" />
+        <menulist flex="1" native="true" preference="extensions.zotero.zotpush.language">
           <menupopup>
-            <menuitem value="auto" />
-            <menuitem value="en" />
-            <menuitem value="it" />
+            <menuitem value="auto" label="Automatic / Automatico" />
+            <menuitem value="en" label="English" />
+            <menuitem value="it" label="Italiano" />
           </menupopup>
         </menulist>
       </hbox>
