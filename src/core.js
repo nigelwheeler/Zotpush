@@ -1,4 +1,7 @@
 /* Pure formatting functions. This file intentionally has no Zotero write API. */
+var ZotpushCoreLocalization = typeof module !== "undefined"
+  ? require("./i18n.js")
+  : ZotpushI18n;
 var ZoteroObsidianCore = (() => {
   "use strict";
 
@@ -19,7 +22,7 @@ var ZoteroObsidianCore = (() => {
     return list.length ? "\n" + list.map(value => `${pad}  - ${yamlString(value)}`).join("\n") : " []";
   }
 
-  function safeFilename(value, fallback = "senza-titolo") {
+  function safeFilename(value, fallback = "untitled") {
     const cleaned = text(value)
       .normalize("NFKC")
       .replace(/[\\/:*?\"<>|\u0000-\u001f]/g, "-")
@@ -72,39 +75,39 @@ var ZoteroObsidianCore = (() => {
     return lines.join("\n");
   }
 
-  function renderGenerated(item) {
-    const out = [START, `# ${text(item.title) || "Senza titolo"}`];
-    if (item.zoteroURI) out.push(`[Apri elemento in Zotero](<${item.zoteroURI}>)`);
-    if (item.abstract) out.push("## Abstract", text(item.abstract));
+  function renderGenerated(item, strings) {
+    const out = [START, `# ${text(item.title) || strings.untitled}`];
+    if (item.zoteroURI) out.push(`[${strings.openItem}](<${item.zoteroURI}>)`);
+    if (item.abstract) out.push(`## ${strings.abstract}`, text(item.abstract));
     if (item.notes?.length) {
-      out.push("## Note Zotero");
-      item.notes.forEach(note => out.push(`### Nota ${note.key}`, htmlToMarkdown(note.note)));
+      out.push(`## ${strings.zoteroNotes}`);
+      item.notes.forEach(note => out.push(`### ${strings.note} ${note.key}`, htmlToMarkdown(note.note)));
     }
     if (item.annotations?.length) {
-      out.push("## Evidenze e annotazioni");
+      out.push(`## ${strings.annotationSection}`);
       item.annotations.forEach(annotation => {
         const page = annotation.pageLabel ? ` — p. ${annotation.pageLabel}` : "";
-        const kind = annotation.type || "annotazione";
+        const kind = strings.annotationTypes[annotation.type] || annotation.type || strings.annotation;
         out.push(`### ${kind}${page}`);
         if (annotation.text) out.push(`> ${text(annotation.text).replace(/\n/g, "\n> ")}`);
         if (annotation.comment) out.push(text(annotation.comment));
         if (annotation.imagePath) out.push(`![](${annotation.imagePath})`);
-        else if (["image", "ink"].includes(annotation.type)) out.push("_Immagine non disponibile nella cache locale di Zotero._");
-        if (annotation.tags?.length) out.push(`Tag: ${annotation.tags.map(t => `#${text(t).replace(/\s+/g, "-")}`).join(" ")}`);
-        if (annotation.openURI) out.push(`[Apri in Zotero](<${annotation.openURI}>)`);
+        else if (["image", "ink"].includes(annotation.type)) out.push(`_${strings.missingImage}_`);
+        if (annotation.tags?.length) out.push(`${strings.tag}: ${annotation.tags.map(tag => `#${text(tag).replace(/\s+/g, "-")}`).join(" ")}`);
+        if (annotation.openURI) out.push(`[${strings.openAnnotation}](<${annotation.openURI}>)`);
       });
     }
     out.push(END);
     return out.join("\n\n");
   }
 
-  function merge(existing, item, exportedAt) {
-    const generated = `${renderYAML(item, exportedAt)}\n\n${renderGenerated(item)}`;
-    if (!existing) return `${generated}\n\n## Note personali\n`;
+  function merge(existing, item, exportedAt, strings = ZotpushCoreLocalization.getMessages("en")) {
+    const generated = `${renderYAML(item, exportedAt)}\n\n${renderGenerated(item, strings)}`;
+    if (!existing) return `${generated}\n\n## ${strings.personalNotes}\n`;
     const end = existing.indexOf(END);
     const start = existing.indexOf(START);
     if (start < 0 || end < start) {
-      throw new Error("Il file esiste ma non contiene i marcatori del plugin; esportazione annullata per non sovrascriverlo.");
+      throw new Error(strings.fileConflict);
     }
     return generated + existing.slice(end + END.length);
   }

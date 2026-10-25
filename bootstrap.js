@@ -4,13 +4,15 @@ var pluginRootURI;
 async function startup({ id, rootURI }) {
   await Zotero.initializationPromise;
   pluginRootURI = rootURI;
+  Services.scriptloader.loadSubScript(rootURI + "src/i18n.js");
   Services.scriptloader.loadSubScript(rootURI + "src/core.js");
   Services.scriptloader.loadSubScript(rootURI + "src/plugin.js");
   ZoteroObsidianReadonly = new ZoteroObsidianReadonlyPlugin(
     Zotero,
     Services,
     ZoteroObsidianCore,
-    id
+    id,
+    ZotpushI18n
   );
   ZoteroObsidianReadonly.start();
 }

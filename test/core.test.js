@@ -1,5 +1,9 @@
 const assert = require("node:assert/strict");
+const localization = require("../src/i18n.js");
 const core = require("../src/core.js");
+const Plugin = require("../src/plugin.js");
+const english = localization.getMessages("en");
+const italian = localization.getMessages("it");
 
 const item = {
   key: "ABCD1234", libraryID: 1, version: 2, citationKey: "rossi2025",
@@ -16,19 +20,97 @@ const item = {
   }]
 };
 
-const first = core.merge("", item, "2026-08-26T00:00:00Z");
+const first = core.merge("", item, "2026-08-26T00:00:00Z", english);
 assert.match(first, /^---\nzotero_item_key: "ABCD1234"/);
 assert.match(first, /title: "Titolo: prova"/);
-assert.match(first, /## Note personali/);
+assert.match(first, /## Personal notes/);
 assert.match(first, /!\[\]\(\.\/assets\/zotero-ABCD1234\/IMAGE01\.png\)/);
-assert.match(first, /\[Apri in Zotero\]\(<zotero:\/\/open-pdf\/library\/items\/PDFKEY01\?page=3&annotation=IMAGE01>\)/);
-assert.match(first, /Immagine non disponibile nella cache locale di Zotero/);
+assert.match(first, /\[Open in Zotero\]\(<zotero:\/\/open-pdf\/library\/items\/PDFKEY01\?page=3&annotation=IMAGE01>\)/);
+assert.match(first, /Image unavailable in Zotero's local cache/);
+
+const italianOutput = core.merge("", item, "2026-08-26T00:00:00Z", italian);
+assert.match(italianOutput, /\[Apri in Zotero\]/);
+assert.match(italianOutput, /## Note personali/);
+assert.match(italianOutput, /Immagine non disponibile nella cache locale di Zotero/);
+assert.equal(localization.resolveLanguage("auto", "it-IT"), "it");
+assert.equal(localization.resolveLanguage("auto", "en-US"), "en");
+assert.equal(localization.resolveLanguage("auto", "fr-FR"), "en");
+assert.equal(localization.resolveLanguage("en", "it-IT"), "en");
+assert.equal(localization.resolveLanguage("it", "en-US"), "it");
+
+class MockElement {
+  constructor() {
+    this.children = [];
+    this.attributes = {};
+    this.listeners = {};
+    this.hidden = false;
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+
+  addEventListener(name, listener) {
+    this.listeners[name] = listener;
+  }
+
+  removeEventListener(name) {
+    delete this.listeners[name];
+  }
+
+  appendChild(child) {
+    this.children.push(child);
+    if (child.id) elements.set(child.id, child);
+  }
+
+  remove() {
+    elements.delete(this.id);
+  }
+}
+
+const elements = new Map();
+const toolsPopup = new MockElement();
+toolsPopup.id = "menu_ToolsPopup";
+elements.set(toolsPopup.id, toolsPopup);
+const contextPopup = new MockElement();
+contextPopup.id = "zotero-itemmenu";
+elements.set(contextPopup.id, contextPopup);
+const window = {
+  document: {
+    getElementById: id => elements.get(id),
+    createXULElement: () => new MockElement()
+  },
+  ZoteroPane: { getSelectedItems: () => [] }
+};
+const preferences = new Map();
+const ZoteroAPI = { locale: "it-IT" };
+const ServicesAPI = {
+  prefs: {
+    getStringPref: (key, fallback) => preferences.get(key) ?? fallback,
+    setStringPref: (key, value) => preferences.set(key, value)
+  }
+};
+const plugin = new Plugin(ZoteroAPI, ServicesAPI, core, "zotpush-md-dev@local", localization);
+plugin.addToWindow(window);
+assert.equal(elements.get(plugin.toolsMenuID).attributes.label, "Esporta selezione in Markdown… (Sviluppo)");
+assert.equal(elements.get(plugin.contextMenuID).attributes.label, "Esporta selezione in Markdown… (Sviluppo)");
+assert.equal(elements.get(plugin.languageMenuID).attributes.label, "Lingua / Language (Sviluppo)");
+assert.equal(plugin.language, "it");
+plugin.setLanguage("en");
+assert.equal(preferences.get(plugin.languagePref), "en");
+assert.equal(plugin.language, "en");
+assert.equal(elements.get(plugin.toolsMenuID).attributes.label, "Push selection to Markdown… (Development)");
+assert.equal(elements.get(plugin.contextMenuID).attributes.label, "Push selection to Markdown… (Development)");
+assert.equal(plugin.languageItems.get(window).find(option => option.language === "en").item.checked, true);
+const reloadedPlugin = new Plugin(ZoteroAPI, ServicesAPI, core, "zotpush-md-dev@local", localization);
+assert.equal(reloadedPlugin.language, "en");
+plugin.stop();
 
 const manual = first + "\nQuesta parte è mia.\n";
-const updated = core.merge(manual, { ...item, title: "Titolo aggiornato" }, "2026-08-27T00:00:00Z");
+const updated = core.merge(manual, { ...item, title: "Titolo aggiornato" }, "2026-08-27T00:00:00Z", english);
 assert.match(updated, /# Titolo aggiornato/);
 assert.match(updated, /Questa parte è mia\./);
-assert.throws(() => core.merge("contenuto estraneo", item, "ora"), /annullata/);
+assert.throws(() => core.merge("contenuto estraneo", item, "ora", italian), error => error.message === italian.fileConflict);
 assert.equal(core.safeFilename('A/B: C?'), "A-B- C-");
 
 console.log("Test core superati");
