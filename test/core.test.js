@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const localization = require("../src/i18n.js");
+const preferencesPane = require("../src/preferences.js");
 const core = require("../src/core.js");
 const Plugin = require("../src/plugin.js");
 const english = localization.getMessages("en");
@@ -83,28 +84,58 @@ const window = {
   ZoteroPane: { getSelectedItems: () => [] }
 };
 const preferences = new Map();
-const ZoteroAPI = { locale: "it-IT" };
+const preferenceObservers = new Map();
+const ZoteroAPI = { locale: "it-IT", getMainWindows: () => [window] };
 const ServicesAPI = {
   prefs: {
     getStringPref: (key, fallback) => preferences.get(key) ?? fallback,
-    setStringPref: (key, value) => preferences.set(key, value)
+    setStringPref: (key, value) => {
+      preferences.set(key, value);
+      preferenceObservers.get(key)?.observe(null, "nsPref:changed", key);
+    },
+    addObserver: (key, observer) => preferenceObservers.set(key, observer),
+    removeObserver: (key, observer) => {
+      if (preferenceObservers.get(key) === observer) preferenceObservers.delete(key);
+    }
   }
 };
 const plugin = new Plugin(ZoteroAPI, ServicesAPI, core, "zotpush-md-dev@local", localization);
-plugin.addToWindow(window);
+plugin.start();
 assert.equal(elements.get(plugin.toolsMenuID).attributes.label, "Esporta selezione in Markdown… (Sviluppo)");
 assert.equal(elements.get(plugin.contextMenuID).attributes.label, "Esporta selezione in Markdown… (Sviluppo)");
-assert.equal(elements.get(plugin.languageMenuID).attributes.label, "Lingua / Language (Sviluppo)");
+assert.equal(toolsPopup.children.length, 1);
 assert.equal(plugin.language, "it");
-plugin.setLanguage("en");
-assert.equal(preferences.get(plugin.languagePref), "en");
+
+const paneCaption = new MockElement();
+const paneDescription = new MockElement();
+const paneLanguageLabel = new MockElement();
+const paneOptions = ["auto", "en", "it"].map(value => Object.assign(new MockElement(), { value }));
+const paneMenu = new MockElement();
+paneMenu.value = "";
+paneMenu.querySelectorAll = () => paneOptions;
+const paneElements = new Map([
+  ["caption", paneCaption],
+  [".description", paneDescription],
+  [".language-label", paneLanguageLabel],
+  ["menulist", paneMenu]
+]);
+const paneRoot = { querySelector: selector => paneElements.get(selector) };
+preferencesPane.init({ currentTarget: paneRoot }, ServicesAPI, ZoteroAPI, localization);
+assert.equal(paneCaption.attributes.label, "Impostazioni lingua");
+assert.equal(paneMenu.value, "auto");
+assert.equal(paneOptions[0].attributes.label, italian.languageAutomatic);
+paneMenu.value = "en";
+paneMenu.listeners.command();
+assert.equal(preferences.get("extensions.zotero.zotpush.language"), "en");
 assert.equal(plugin.language, "en");
 assert.equal(elements.get(plugin.toolsMenuID).attributes.label, "Push selection to Markdown… (Development)");
 assert.equal(elements.get(plugin.contextMenuID).attributes.label, "Push selection to Markdown… (Development)");
-assert.equal(plugin.languageItems.get(window).find(option => option.language === "en").item.checked, true);
+assert.equal(paneCaption.attributes.label, "Language settings");
+assert.equal(paneOptions[0].attributes.label, english.languageAutomatic);
 const reloadedPlugin = new Plugin(ZoteroAPI, ServicesAPI, core, "zotpush-md-dev@local", localization);
 assert.equal(reloadedPlugin.language, "en");
 plugin.stop();
+assert.equal(preferenceObservers.size, 0);
 
 const manual = first + "\nQuesta parte è mia.\n";
 const updated = core.merge(manual, { ...item, title: "Titolo aggiornato" }, "2026-08-27T00:00:00Z", english);
