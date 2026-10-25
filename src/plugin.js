@@ -1,17 +1,56 @@
 /* global ZoteroObsidianCore, Cc, Ci */
 var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
-  constructor(ZoteroAPI, ServicesAPI, core, addonId = "zotero-obsidian-readonly@example.com") {
+  constructor(ZoteroAPI, ServicesAPI, core, addonId = "zotero-obsidian-readonly@example.com", localization = ZotpushI18n) {
     this.Zotero = ZoteroAPI;
     this.Services = ServicesAPI;
     this.core = core;
+    this.localization = localization;
     const idPrefix = addonId.replace(/[^a-zA-Z0-9_-]/g, "-");
-    this.isDevelopment = addonId === "zotpush-md-dev@local";
-    const suffix = this.isDevelopment ? " (Development)" : "";
     this.toolsMenuID = `${idPrefix}-zotpush-export-tools`;
     this.contextMenuID = `${idPrefix}-zotpush-export-context`;
-    this.menuLabel = `Push selezione in Markdown…${suffix}`;
-    this.addonName = `ZotPush MD${suffix}`;
+    this.languageMenuID = `${idPrefix}-zotpush-language`;
+    this.languagePref = `extensions.zotero.zotpush.${idPrefix}.language`;
+    this.isDevelopment = addonId === "zotpush-md-dev@local";
+    this.languageItems = new Map();
+    try {
+      const savedLanguage = this.Services.prefs.getStringPref(this.languagePref, "auto");
+      this.languageSetting = ["auto", "en", "it"].includes(savedLanguage) ? savedLanguage : "auto";
+    } catch {
+      this.languageSetting = "auto";
+    }
+    this.updateLanguage();
     this.windows = new Set();
+  }
+
+  updateLanguage() {
+    this.language = this.localization.resolveLanguage(this.languageSetting, this.Zotero.locale);
+    this.strings = this.localization.getMessages(this.language);
+    this.addonName = this.strings.addonName + (this.isDevelopment ? this.strings.developmentSuffix : "");
+    this.exportMenuLabel = this.strings.exportMenu + (this.isDevelopment ? this.strings.developmentSuffix : "");
+  }
+
+  setLanguage(language) {
+    if (!["auto", "en", "it"].includes(language)) return;
+    this.languageSetting = language;
+    this.Services.prefs.setStringPref(this.languagePref, language);
+    this.updateLanguage();
+    for (const win of this.windows) this.updateWindowLabels(win);
+  }
+
+  updateWindowLabels(win) {
+    const exportItem = win.document.getElementById(this.toolsMenuID);
+    const contextItem = win.document.getElementById(this.contextMenuID);
+    const languageMenu = win.document.getElementById(this.languageMenuID);
+    exportItem?.setAttribute("label", this.exportMenuLabel);
+    contextItem?.setAttribute("label", this.exportMenuLabel);
+    languageMenu?.setAttribute("label", `${this.strings.languageMenu}${this.isDevelopment ? this.strings.developmentSuffix : ""}`);
+    for (const { language, item } of this.languageItems.get(win) || []) {
+      const label = language === "auto" ? this.strings.languageAutomatic
+        : language === "en" ? this.strings.languageEnglish
+          : this.strings.languageItalian;
+      item.setAttribute("label", label);
+      item.checked = this.languageSetting === language;
+    }
   }
 
   start() {
@@ -28,15 +67,32 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     if (!popup) return;
     const item = win.document.createXULElement("menuitem");
     item.id = this.toolsMenuID;
-    item.setAttribute("label", this.menuLabel);
+    item.setAttribute("label", this.exportMenuLabel);
     item.addEventListener("command", () => this.exportSelection(win));
     popup.appendChild(item);
+
+    const languageMenu = win.document.createXULElement("menu");
+    languageMenu.id = this.languageMenuID;
+    const languagePopup = win.document.createXULElement("menupopup");
+    const languageItems = [];
+    for (const language of ["auto", "en", "it"]) {
+      const option = win.document.createXULElement("menuitem");
+      option.setAttribute("type", "radio");
+      option.setAttribute("name", this.languageMenuID);
+      option.value = language;
+      option.addEventListener("command", () => this.setLanguage(language));
+      languagePopup.appendChild(option);
+      languageItems.push({ language, item: option });
+    }
+    languageMenu.appendChild(languagePopup);
+    popup.appendChild(languageMenu);
+    this.languageItems.set(win, languageItems);
 
     const contextPopup = win.document.getElementById("zotero-itemmenu");
     if (contextPopup) {
       const contextItem = win.document.createXULElement("menuitem");
       contextItem.id = this.contextMenuID;
-      contextItem.setAttribute("label", this.menuLabel);
+      contextItem.setAttribute("label", this.exportMenuLabel);
       contextItem.addEventListener("command", () => this.exportSelection(win));
       const updateVisibility = () => {
         const hasRegularItem = win.ZoteroPane.getSelectedItems()
@@ -48,10 +104,12 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       contextPopup.appendChild(contextItem);
     }
     this.windows.add(win);
+    this.updateWindowLabels(win);
   }
 
   removeFromWindow(win) {
     win?.document.getElementById(this.toolsMenuID)?.remove();
+    win?.document.getElementById(this.languageMenuID)?.remove();
     const contextItem = win?.document.getElementById(this.contextMenuID);
     const contextPopup = win?.document.getElementById("zotero-itemmenu");
     if (contextItem?._zoteroObsidianPopupHandler) {
@@ -61,12 +119,13 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       );
     }
     contextItem?.remove();
+    this.languageItems.delete(win);
     this.windows.delete(win);
   }
 
   async chooseDirectory(win) {
     const picker = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-    picker.init(win.browsingContext, `Scegli la cartella di destinazione Markdown${this.isDevelopment ? " (Development)" : ""}`, Ci.nsIFilePicker.modeGetFolder);
+    picker.init(win.browsingContext, `${this.strings.chooseDirectory}${this.isDevelopment ? this.strings.developmentSuffix : ""}`, Ci.nsIFilePicker.modeGetFolder);
     const result = await new Promise(resolve => picker.open(resolve));
     if (result !== Ci.nsIFilePicker.returnOK) return null;
     return picker.file.path;
@@ -76,7 +135,7 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     try {
       const selected = win.ZoteroPane.getSelectedItems().filter(item => item.isRegularItem());
       if (!selected.length) {
-        this.alert(win, "Seleziona almeno un elemento bibliografico.");
+        this.alert(win, this.strings.selectItems);
         return;
       }
       const directory = await this.chooseDirectory(win);
@@ -87,10 +146,10 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
         await this.writeMarkdown(directory, model);
         count++;
       }
-      this.alert(win, `${count} file Markdown esportati. Zotero non è stato modificato.`);
+      this.alert(win, this.strings.exportComplete(count));
     } catch (error) {
       this.Zotero.logError(error);
-      this.alert(win, `Esportazione non riuscita:\n${error.message}`);
+      this.alert(win, this.strings.exportFailed(error.message));
     }
   }
 
@@ -161,11 +220,11 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       await IOUtils.copy(annotation.imageSourcePath, destination, { noOverwrite: false });
       annotation.imagePath = `${assetRelativeDir}/${imageName}`;
     }
-    const leaf = `${this.core.safeFilename(model.title)} - ${model.key}.md`;
+    const leaf = `${this.core.safeFilename(model.title, this.strings.untitled)} - ${model.key}.md`;
     const path = PathUtils.join(directory, leaf);
     let existing = "";
     if (await IOUtils.exists(path)) existing = await IOUtils.readUTF8(path);
-    const output = this.core.merge(existing, model, new Date().toISOString());
+    const output = this.core.merge(existing, model, new Date().toISOString(), this.strings);
     await IOUtils.writeUTF8(path, output, { tmpPath: path + ".tmp" });
   }
 
@@ -173,3 +232,5 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     this.Services.prompt.alert(win, this.addonName, message);
   }
 };
+
+if (typeof module !== "undefined") module.exports = ZoteroObsidianReadonlyPlugin;

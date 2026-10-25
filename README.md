@@ -1,86 +1,83 @@
 # ZotPush MD
 
-Plugin XPI per fare push degli elementi bibliografici selezionati da Zotero verso file Markdown autonomi con frontmatter YAML, note, annotazioni e immagini. I file possono essere usati con Obsidian o con qualsiasi altro strumento compatibile con Markdown.
+ZotPush MD is a Zotero add-on that exports selected library items to standalone Markdown files with YAML front matter, notes, annotations, and images. The files can be used with Obsidian or any other Markdown-compatible tool.
 
-Versione corrente: 0.3.1.
+Current version: 0.3.1.
 
-## Garanzia fondamentale
+## Core guarantee
 
-Il plugin non modifica item, note, annotazioni, tag, collezioni, allegati o database Zotero. Il flusso è esclusivamente `Zotero → file Markdown`. L'unica scrittura avviene nella cartella scelta dall'utente. `npm test` include un controllo statico delle API mutative vietate.
+The add-on does not modify Zotero items, notes, annotations, tags, collections, attachments, or the Zotero database. The data flow is exclusively `Zotero → Markdown files`. The only files it writes are in the output folder chosen by the user. `npm test` includes a static check for prohibited mutating APIs.
 
-## Uso
+## Build and install
 
-Chi vuole esaminare il codice e costruire la XPI localmente può usare Node.js e npm:
+To inspect the source and build an XPI locally, you need Node.js and npm. The test script also requires Bash and ripgrep. Building requires `zip`, or `tar.exe` on Windows.
 
 ```bash
 git clone https://github.com/paolovolterra/Zotpush.git
 cd Zotpush
-npm test
-npm run build
+npm.cmd test
+npm.cmd run build
 ```
 
-`npm test` esegue i test del formatter e l'audit statico delle chiamate mutative verso Zotero. `npm run build` crea `dist/zotpush-md-0.3.1.xpi`. Il progetto non ha dipendenze npm da installare e non richiede `npm install`. L'audit è una verifica del sorgente fornito: leggere anche il codice se serve una valutazione indipendente.
+In PowerShell, use `npm.cmd` if the execution policy blocks the `npm.ps1` shim. Elsewhere, use `npm` in place of `npm.cmd`.
 
-In alternativa, scaricare la XPI già costruita dalla [release GitHub](https://github.com/paolovolterra/Zotpush/releases/tag/v0.3.1).
+`npm test` runs the formatter tests and a static audit for mutating calls to Zotero. `npm run build` creates `dist/zotpush-md-0.3.1.xpi`. `npm run build:dev` creates `dist/zotpush-md-0.3.1-dev.xpi`, with the display name **ZotPush MD (Development)** and a separate add-on ID so it can be installed alongside the release. The development menu item is also marked `(Development)`. The dev manifest retains the required upstream update URL, but the upstream feed has no entry for the dev add-on ID. The project has no npm dependencies and does not require `npm install`. The audit checks the supplied source; review the code as well if you need an independent assessment.
 
-SHA-256 della XPI distribuita (`zotpush-md-0.3.1.xpi`):
+The add-on's **Language / Lingua** menu offers **Automatic**, **English**, and **Italiano**. Automatic follows Zotero's installation language when Italian is selected and otherwise falls back to English. The choice is saved separately for each add-on installation. The menu, dialogs, errors, and add-on-generated Markdown text use the selected language; Zotero metadata and YAML field names remain unchanged.
+
+To install either XPI, in Zotero choose **Tools → Add-ons → gear icon → Install Add-on From File**, then select the XPI. Select one or more library items, then choose **Push selezione in Markdown…** from the Tools menu or the item's context menu. That menu label is currently Italian in the add-on.
+
+The Markdown filename includes the Zotero key to avoid collisions. Re-exports replace the YAML front matter and generated content while preserving anything after the final marker. If a file with the same name does not contain the add-on's markers, export stops without overwriting it.
+
+The Markdown filename uses the Zotero item title, cleaned of filesystem-invalid characters, followed by its Zotero key:
+
+```text
+Zotero title - KEY.md
+```
+
+Alternatively, download the prebuilt XPI from the [GitHub release](https://github.com/paolovolterra/Zotpush/releases/tag/v0.3.1).
+
+SHA-256 of the distributed XPI (`zotpush-md-0.3.1.xpi`):
 
 ```text
 b8ef61825b64896bc0f6282d94aacbc8fd2365910e4b8f3b85b99e99d2f73ec6
 ```
 
-Verificarlo con `sha256sum zotpush-md-0.3.1.xpi` su Linux, `shasum -a 256 zotpush-md-0.3.1.xpi` su macOS o `Get-FileHash .\zotpush-md-0.3.1.xpi -Algorithm SHA256` in PowerShell. Il feed [updates.json](updates.json) contiene lo stesso hash. Una XPI costruita localmente può avere un hash diverso per i metadati dell'archivio ZIP: quello sopra identifica il file della release.
+Verify it with `sha256sum zotpush-md-0.3.1.xpi` on Linux, `shasum -a 256 zotpush-md-0.3.1.xpi` on macOS, or `Get-FileHash .\zotpush-md-0.3.1.xpi -Algorithm SHA256` in PowerShell. The [updates.json](updates.json) feed contains the same hash. A locally built XPI may have a different hash because of ZIP archive metadata; the hash above identifies the release file.
 
-La versione 0.3.1 è archiviata anche su [Zenodo](https://doi.org/10.5281/zenodo.22901556), DOI `10.5281/zenodo.22901556`. Il deposito contiene la XPI installabile e uno ZIP separato con sorgenti, test e script di compilazione. SHA-256 di `zotpush-md-source-v0.3.1.zip`:
+Version 0.3.1 is also archived on [Zenodo](https://doi.org/10.5281/zenodo.22901556), DOI `10.5281/zenodo.22901556`. The deposit contains the installable XPI and a separate ZIP with the source, tests, and build scripts. SHA-256 of `zotpush-md-source-v0.3.1.zip`:
 
 ```text
 9255052fbb0c6fa236c86fc21829b21313f689405be69178457df4598516e733
 ```
 
-1. In Zotero: **Strumenti → Componenti aggiuntivi → ingranaggio → Installa componente aggiuntivo da file**.
-2. Selezionare la XPI locale o quella scaricata.
-3. Selezionare uno o più riferimenti bibliografici.
-4. Usare **Strumenti → Push selezione in Markdown…** oppure fare clic destro sulla selezione e scegliere **Push selezione in Markdown…**.
+## Version 0.3.1 limitations
 
-Il nome del file include la chiave Zotero per evitare collisioni. Le riesportazioni sostituiscono YAML e blocco generato, preservando tutto ciò che segue il marcatore finale. Se un file omonimo non contiene i marcatori del plugin, l'esportazione si ferma senza sovrascriverlo.
+- Exports only items selected manually.
+- Reads the citation key from the available field or the `Citation Key:` line in Extra (compatible with Better BibTeX when available).
+- Copies annotation images already present in the local cache to `assets/zotero-KEY/` and embeds them using relative Markdown links (`![](./assets/...)`), compatible with Obsidian, Markdown previews, and HTML rendering. The add-on does not force the cache to be created, since that would write to Zotero's data area.
+- Declared compatibility: Zotero 9.0.x and Zotero 10.0.x. Automated tests and the static audit pass; compatibility with the Zotero 10 interface still needs testing across different installations.
 
-Il file Markdown prende il nome dal titolo dell'elemento Zotero, ripulito dai caratteri non validi per il filesystem, seguito dalla chiave Zotero:
+## How ZotPush MD relates to zlb
 
-```text
-Titolo Zotero - CHIAVE.md
-```
+[zlb](https://github.com/paolovolterra/zotero-llm-bridge) searches for and imports PDFs into the library through Zotero's local API. ZotPush MD starts from the library and exports selected references and annotations to Markdown. The tools are independent and cover different steps in the same research workflow.
 
-## Limiti della versione 0.3.1
+ZotPush MD does not transmit library contents and contains no telemetry. Zotero may contact GitHub to check for updates listed in `updates.json`. The add-on writes only to the Markdown folder chosen by the user; it does not modify Zotero data.
 
-- Esporta solo gli elementi selezionati manualmente.
-- La citation key viene letta dal campo disponibile o dalla riga `Citation Key:` di Extra (compatibile con Better BibTeX quando presente).
-- Le immagini delle annotazioni già presenti nella cache locale vengono copiate in `assets/zotero-CHIAVE/` e incorporate con link Markdown relativi (`![](./assets/...)`), compatibili con Obsidian, anteprime Markdown e rendering HTML. Il plugin non forza la creazione della cache, perché scriverebbe nell'area dati Zotero.
-- Compatibilità dichiarata: Zotero 9.0.x e Zotero 10.0.x. Test automatici e audit statico superati; la compatibilità nell'interfaccia di Zotero 10 richiede ancora prove su installazioni diverse.
+## Planned improvements
 
-## Rapporto con zlb
+- Make batch exports more resilient: if one document fails, continue with the remaining documents instead of aborting the whole batch.
+- Provide a final summary separating files created, updated, skipped, and not exported, with the reason for each error.
+- Add an optional mode to embed images as Base64 in the Markdown. The default would remain separate files in `assets/`, which are smaller, readable, and Git-friendly.
 
-[zlb](https://github.com/paolovolterra/zotero-llm-bridge) cerca e importa PDF nella libreria tramite l'API locale di Zotero. ZotPush MD parte dalla libreria: esporta i riferimenti e le annotazioni selezionati verso Markdown. I due strumenti sono indipendenti e coprono passaggi diversi dello stesso flusso di studio.
+## Source and updates
 
-ZotPush MD non trasmette contenuti della libreria e non contiene telemetria. Zotero può contattare GitHub per controllare gli aggiornamenti indicati in `updates.json`. La scrittura del plugin è limitata alla cartella Markdown scelta dall'utente; non modifica i dati Zotero.
+The [GitHub repository](https://github.com/paolovolterra/Zotpush) is public. Releases contain the installable XPI; `updates.json` tells Zotero where to find the available version and its SHA-256 hash. This is a preview release; bug reports and suggestions can be opened in [Issues](https://github.com/paolovolterra/Zotpush/issues).
 
-## Migliorie pianificate
+## Development
 
-- Esportazione multipla resiliente: se un documento produce un errore, continuare con i successivi invece di interrompere l'intero gruppo.
-- Riepilogo finale separato per file creati, aggiornati, ignorati e non esportati, con il motivo di ogni errore.
-- Modalità opzionale per incorporare le immagini come Base64 nel Markdown. La modalità predefinita resta quella con file separati in `assets/`, più leggera, leggibile e adatta a Git.
+The XPI is a standard ZIP archive containing `manifest.json`, `bootstrap.js`, and `src/`. Run `npm test` to check the formatter and the read-only constraint.
 
-## Sorgente e aggiornamenti
+## License
 
-Il [repository GitHub](https://github.com/paolovolterra/Zotpush) è pubblico. Le release contengono la XPI installabile; `updates.json` indica a Zotero il file e l'hash SHA-256 della versione disponibile. Il plugin è una preview: segnalazioni e proposte possono essere aperte nelle [Issues](https://github.com/paolovolterra/Zotpush/issues).
-
-## Sviluppo
-
-La XPI è un normale archivio ZIP contenente `manifest.json`, `bootstrap.js` e `src/`. Per controllare il formatter e il vincolo di sola lettura:
-
-```bash
-npm test
-```
-
-## Licenza
-
-ZotPush MD è software open source distribuito con licenza [MIT](LICENSE).
+ZotPush MD is open-source software distributed under the [MIT License](LICENSE).
