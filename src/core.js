@@ -7,6 +7,7 @@ var ZoteroObsidianCore = (() => {
 
   const START = "<!-- zotero-obsidian-readonly:start -->";
   const END = "<!-- zotero-obsidian-readonly:end -->";
+  const DEFAULT_TAG_PATTERN = "[^\\p{L}\\p{N}/_-]+";
 
   function text(value) {
     return String(value ?? "").replace(/\r\n?/g, "\n").trim();
@@ -55,6 +56,44 @@ var ZoteroObsidianCore = (() => {
       .replace(/&#x2F;/gi, "/")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+  }
+
+  function normalizeTags(tags, enabled, pattern = DEFAULT_TAG_PATTERN) {
+    const originalTags = (tags || []).map(tag => String(tag ?? ""));
+    if (!enabled) return { tags: originalTags, changes: [], error: null };
+
+    let replacementPattern;
+    let error = null;
+    try {
+      replacementPattern = new RegExp(pattern || DEFAULT_TAG_PATTERN, "gu");
+    } catch (regexError) {
+      replacementPattern = new RegExp(DEFAULT_TAG_PATTERN, "gu");
+      error = regexError.message;
+    }
+
+    const normalizedTags = [];
+    const changes = [];
+    const seen = new Set();
+    for (const original of originalTags) {
+      const normalized = original.normalize("NFKC").toLowerCase()
+        .replace(replacementPattern, "-")
+        .replace(/[^\p{L}\p{N}/_-]+/gu, "-")
+        .replace(/-+/g, "-")
+        .replace(/\/+/g, "/")
+        .replace(/^[-/]+|[-/]+$/g, "");
+
+      if (!normalized) {
+        changes.push({ from: original, to: "", action: "removed" });
+      } else if (seen.has(normalized)) {
+        changes.push({ from: original, to: normalized, action: "duplicate-removed" });
+      } else {
+        seen.add(normalized);
+        normalizedTags.push(normalized);
+        if (normalized !== original) changes.push({ from: original, to: normalized, action: "formatted" });
+      }
+    }
+
+    return { tags: normalizedTags, changes, error };
   }
 
   function renderYAML(item, exportedAt) {
@@ -121,7 +160,7 @@ var ZoteroObsidianCore = (() => {
     return generated + existing.slice(end + END.length);
   }
 
-  return { START, END, safeFilename, htmlToMarkdown, renderYAML, renderGenerated, merge };
+  return { START, END, DEFAULT_TAG_PATTERN, safeFilename, htmlToMarkdown, normalizeTags, renderYAML, renderGenerated, merge };
 })();
 
 if (typeof module !== "undefined") module.exports = ZoteroObsidianCore;

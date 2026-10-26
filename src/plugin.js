@@ -9,9 +9,25 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     this.toolsMenuID = `${idPrefix}-zotpush-export-tools`;
     this.contextMenuID = `${idPrefix}-zotpush-export-context`;
     this.languagePref = "extensions.zotero.zotpush.language";
+    this.reformatTagsPref = "extensions.zotero.zotpush.reformatTags";
+    this.tagRegexPref = "extensions.zotero.zotpush.tagRegex";
+    this.saveExportLogPref = "extensions.zotero.zotpush.saveExportLog";
+    this.exportLogDirectoryPref = "extensions.zotero.zotpush.exportLogDirectory";
     this.isDevelopment = addonId === "zotpush-md-dev@local";
     if (!this.Services.prefs.prefHasUserValue(this.languagePref)) {
       this.Services.prefs.setStringPref(this.languagePref, "auto");
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.reformatTagsPref)) {
+      this.Services.prefs.setBoolPref(this.reformatTagsPref, false);
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.tagRegexPref)) {
+      this.Services.prefs.setStringPref(this.tagRegexPref, core.DEFAULT_TAG_PATTERN);
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.saveExportLogPref)) {
+      this.Services.prefs.setBoolPref(this.saveExportLogPref, false);
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.exportLogDirectoryPref)) {
+      this.Services.prefs.setStringPref(this.exportLogDirectoryPref, "");
     }
     this.languageObserver = {
       observe: (_subject, topic, preference) => {
@@ -114,13 +130,78 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       }
       const directory = await this.chooseDirectory(win);
       if (!directory) return;
+      const exportSettings = {
+        reformatTags: this.Services.prefs.getBoolPref(this.reformatTagsPref, false),
+        tagRegex: this.Services.prefs.getStringPref(this.tagRegexPref, this.core.DEFAULT_TAG_PATTERN),
+        saveExportLog: this.Services.prefs.getBoolPref(this.saveExportLogPref, false),
+        exportLogDirectory: this.Services.prefs.getStringPref(this.exportLogDirectoryPref, "").trim()
+      };
+      const log = {
+        startedAt: new Date().toISOString(),
+        language: this.language,
+        outputDirectory: directory,
+        settings: { ...exportSettings },
+        warnings: [],
+        items: []
+      };
       let count = 0;
+      const tagTotals = { formatted: 0, duplicates: 0, removed: 0 };
+      const regexWarnings = new Set();
+      let exportError = null;
       for (const item of selected) {
-        const model = await this.readItem(item);
-        await this.writeMarkdown(directory, model);
-        count++;
+        try {
+          const model = await this.readItem(item);
+          const result = await this.writeMarkdown(directory, model, exportSettings);
+          count++;
+          for (const change of result.tagResult.changes) {
+            if (change.action === "formatted") tagTotals.formatted++;
+            else if (change.action === "duplicate-removed") tagTotals.duplicates++;
+            else if (change.action === "removed") tagTotals.removed++;
+          }
+          if (result.tagResult.error) regexWarnings.add(result.tagResult.error);
+          log.items.push({
+            key: model.key,
+            title: model.title,
+            outputPath: result.path,
+            status: "exported",
+            tagChanges: result.tagResult.changes
+          });
+        } catch (error) {
+          exportError = error;
+          this.Zotero.logError(error);
+          log.items.push({ key: item.key, status: "failed", error: error.message });
+          break;
+        }
       }
-      this.alert(win, this.strings.exportComplete(count));
+      const report = [];
+      if (count) report.push(this.strings.exportComplete(count));
+      if (exportError) report.push(this.strings.exportFailed(exportError.message));
+      if (exportSettings.reformatTags) {
+        report.push(this.strings.tagExportSummary(tagTotals.formatted, tagTotals.duplicates, tagTotals.removed));
+      }
+      if (regexWarnings.size) report.push(this.strings.tagPatternWarning);
+      log.warnings = [...regexWarnings].map(detail => ({
+        type: "invalid-tag-regex",
+        message: this.strings.tagPatternWarning,
+        detail
+      }));
+
+      if (exportSettings.saveExportLog) {
+        try {
+          const logDirectory = exportSettings.exportLogDirectory || directory;
+          await IOUtils.makeDirectory(logDirectory, { createAncestors: true, ignoreExisting: true });
+          const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const logPath = PathUtils.join(logDirectory, `zotpush-export-${timestamp}.json`);
+          log.finishedAt = new Date().toISOString();
+          log.summary = { exported: count, tagChanges: tagTotals, failed: Boolean(exportError) };
+          await IOUtils.writeUTF8(logPath, JSON.stringify(log, null, 2), { tmpPath: logPath + ".tmp" });
+          report.push(this.strings.logSaved(logPath));
+        } catch (error) {
+          this.Zotero.logError(error);
+          report.push(this.strings.logSaveFailed(error.message));
+        }
+      }
+      if (report.length) this.alert(win, report.join("\n\n"));
     } catch (error) {
       this.Zotero.logError(error);
       this.alert(win, this.strings.exportFailed(error.message));
@@ -189,7 +270,13 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     };
   }
 
-  async writeMarkdown(directory, model) {
+  async writeMarkdown(directory, model, exportSettings = {}) {
+    const tagResult = this.core.normalizeTags(
+      model.tags,
+      exportSettings.reformatTags === true,
+      exportSettings.tagRegex || this.core.DEFAULT_TAG_PATTERN
+    );
+    const exportModel = { ...model, tags: tagResult.tags };
     const assetRelativeDir = `./assets/zotero-${model.key}`;
     const assetDir = PathUtils.join(directory, "assets", `zotero-${model.key}`);
     for (const annotation of model.annotations) {
@@ -204,8 +291,9 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     const path = PathUtils.join(directory, leaf);
     let existing = "";
     if (await IOUtils.exists(path)) existing = await IOUtils.readUTF8(path);
-    const output = this.core.merge(existing, model, new Date().toISOString(), this.strings);
+    const output = this.core.merge(existing, exportModel, new Date().toISOString(), this.strings);
     await IOUtils.writeUTF8(path, output, { tmpPath: path + ".tmp" });
+    return { path, tagResult };
   }
 
   alert(win, message) {
