@@ -8,6 +8,11 @@ var ZoteroObsidianCore = (() => {
   const START = "<!-- zotero-obsidian-readonly:start -->";
   const END = "<!-- zotero-obsidian-readonly:end -->";
   const DEFAULT_TAG_PATTERN = "[^\\p{L}\\p{N}/_-]+";
+  const RESERVED_YAML_KEYS = new Set([
+    "zotero_item_key", "zotero_library_id", "citation_key", "title", "authors",
+    "date", "year", "item_type", "doi", "isbn", "url", "collections", "tags",
+    "zotero_uri", "zotero_version", "exported_at", "aliases"
+  ]);
 
   function text(value) {
     return String(value ?? "").replace(/\r\n?/g, "\n").trim();
@@ -96,6 +101,90 @@ var ZoteroObsidianCore = (() => {
     return { tags: normalizedTags, changes, error };
   }
 
+  function filenameBase(item, format, strings) {
+    const key = safeFilename(item.key, "item");
+    const title = safeFilename(item.title, strings.untitled);
+    const titleAndKey = `${title} - ${key}`;
+    const citationKey = text(item.citationKey);
+    if (format === "citation-key" && citationKey) {
+      return safeFilename(citationKey, titleAndKey);
+    }
+    return titleAndKey;
+  }
+
+  function formatCitation(item, template, strings) {
+    const creators = (item.creators || []).map(creator => ({
+      short: text(creator.lastName || creator.name || [creator.firstName, creator.lastName].filter(Boolean).join(" ")),
+      full: text(creator.name || [creator.firstName, creator.lastName].filter(Boolean).join(" "))
+    })).filter(creator => creator.short);
+    const shortAuthors = creators.length === 0 ? strings.citationNoAuthor
+      : creators.length === 1 ? creators[0].short
+        : creators.length === 2 ? `${creators[0].short} ${strings.citationAnd} ${creators[1].short}`
+          : `${creators[0].short} et al.`;
+    const values = {
+      author: shortAuthors,
+      authors: creators.map(creator => creator.full).join("; ") || strings.citationNoAuthor,
+      year: text(item.year) || strings.citationNoYear,
+      title: text(item.title),
+      citationKey: text(item.citationKey),
+      key: text(item.key)
+    };
+    return String(template || "{author} ({year})")
+      .replace(/\{([A-Za-z]+)\}/g, (placeholder, name) =>
+        Object.hasOwn(values, name) ? values[name] : placeholder
+      ).trim();
+  }
+
+  function buildAliases(item, citation, strings, includeCitation = true) {
+    const candidates = [
+      `${text(item.title) || strings.untitled} - ${text(item.key)}`,
+      text(item.citationKey),
+      includeCitation ? text(citation) : ""
+    ].filter(Boolean);
+    const seen = new Set();
+    return candidates.filter(alias => {
+      const normalized = alias.toLocaleLowerCase();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  }
+
+  function isSafeCustomYamlKey(key) {
+    const normalized = text(key).toLowerCase();
+    return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(key) && !RESERVED_YAML_KEYS.has(normalized);
+  }
+
+  function getFrontMatter(markdown) {
+    const frontMatter = String(markdown || "").match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
+    if (!frontMatter) return null;
+    const values = {};
+    for (const line of frontMatter[1].split(/\r?\n/)) {
+      const match = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
+      if (!match) continue;
+      const [, name, rawValue] = match;
+      try {
+        values[name] = JSON.parse(rawValue);
+      } catch {
+        values[name] = rawValue.replace(/^['"]|['"]$/g, "");
+      }
+    }
+    return values;
+  }
+
+  function getZoteroItemIdentity(markdown) {
+    const frontMatter = getFrontMatter(markdown);
+    if (!frontMatter || !frontMatter.zotero_item_key) return null;
+    return {
+      key: String(frontMatter.zotero_item_key),
+      libraryID: String(frontMatter.zotero_library_id ?? "")
+    };
+  }
+
+  function getZoteroItemKey(markdown) {
+    return getZoteroItemIdentity(markdown)?.key || "";
+  }
+
   function renderYAML(item, exportedAt) {
     const creators = (item.creators || []).map(c =>
       c.name || [c.firstName, c.lastName].filter(Boolean).join(" ")
@@ -118,8 +207,12 @@ var ZoteroObsidianCore = (() => {
       `zotero_uri: ${yamlString(item.zoteroURI)}`,
       `zotero_version: ${Number(item.version) || 0}`,
       `exported_at: ${yamlString(exportedAt)}`,
-      "---"
     ];
+    if (item.aliases?.length) lines.push(`aliases:${yamlList(item.aliases)}`);
+    if (item.citationProperty && item.citation && isSafeCustomYamlKey(item.citationProperty)) {
+      lines.push(`${item.citationProperty}: ${yamlString(item.citation)}`);
+    }
+    lines.push("---");
     return lines.join("\n");
   }
 
@@ -160,7 +253,12 @@ var ZoteroObsidianCore = (() => {
     return generated + existing.slice(end + END.length);
   }
 
-  return { START, END, DEFAULT_TAG_PATTERN, safeFilename, htmlToMarkdown, normalizeTags, renderYAML, renderGenerated, merge };
+  return {
+    START, END, DEFAULT_TAG_PATTERN, safeFilename, htmlToMarkdown, normalizeTags,
+    filenameBase, formatCitation, buildAliases, isSafeCustomYamlKey, getFrontMatter,
+    getZoteroItemIdentity, getZoteroItemKey,
+    renderYAML, renderGenerated, merge
+  };
 })();
 
 if (typeof module !== "undefined") module.exports = ZoteroObsidianCore;

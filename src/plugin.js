@@ -13,6 +13,10 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     this.tagRegexPref = "extensions.zotero.zotpush.tagRegex";
     this.saveExportLogPref = "extensions.zotero.zotpush.saveExportLog";
     this.exportLogDirectoryPref = "extensions.zotero.zotpush.exportLogDirectory";
+    this.filenameFormatPref = "extensions.zotero.zotpush.filenameFormat";
+    this.citationTemplatePref = "extensions.zotero.zotpush.citationTemplate";
+    this.citationPropertyPref = "extensions.zotero.zotpush.citationProperty";
+    this.includeCitationAliasPref = "extensions.zotero.zotpush.includeCitationAlias";
     this.isDevelopment = addonId === "zotpush-md-dev@local";
     if (!this.Services.prefs.prefHasUserValue(this.languagePref)) {
       this.Services.prefs.setStringPref(this.languagePref, "auto");
@@ -28,6 +32,18 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
     }
     if (!this.Services.prefs.prefHasUserValue(this.exportLogDirectoryPref)) {
       this.Services.prefs.setStringPref(this.exportLogDirectoryPref, "");
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.filenameFormatPref)) {
+      this.Services.prefs.setStringPref(this.filenameFormatPref, "citation-key");
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.citationTemplatePref)) {
+      this.Services.prefs.setStringPref(this.citationTemplatePref, "{author} ({year})");
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.citationPropertyPref)) {
+      this.Services.prefs.setStringPref(this.citationPropertyPref, "harvard");
+    }
+    if (!this.Services.prefs.prefHasUserValue(this.includeCitationAliasPref)) {
+      this.Services.prefs.setBoolPref(this.includeCitationAliasPref, true);
     }
     this.languageObserver = {
       observe: (_subject, topic, preference) => {
@@ -134,7 +150,11 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
         reformatTags: this.Services.prefs.getBoolPref(this.reformatTagsPref, false),
         tagRegex: this.Services.prefs.getStringPref(this.tagRegexPref, this.core.DEFAULT_TAG_PATTERN),
         saveExportLog: this.Services.prefs.getBoolPref(this.saveExportLogPref, false),
-        exportLogDirectory: this.Services.prefs.getStringPref(this.exportLogDirectoryPref, "").trim()
+        exportLogDirectory: this.Services.prefs.getStringPref(this.exportLogDirectoryPref, "").trim(),
+        filenameFormat: this.Services.prefs.getStringPref(this.filenameFormatPref, "citation-key"),
+        citationTemplate: this.Services.prefs.getStringPref(this.citationTemplatePref, "{author} ({year})"),
+        citationProperty: this.Services.prefs.getStringPref(this.citationPropertyPref, "harvard").trim(),
+        includeCitationAlias: this.Services.prefs.getBoolPref(this.includeCitationAliasPref, true)
       };
       const log = {
         startedAt: new Date().toISOString(),
@@ -147,12 +167,16 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       let count = 0;
       const tagTotals = { formatted: 0, duplicates: 0, removed: 0 };
       const regexWarnings = new Set();
+      let citationPropertyInvalid = false;
+      let filenameFallbackCount = 0;
       let exportError = null;
       for (const item of selected) {
         try {
           const model = await this.readItem(item);
           const result = await this.writeMarkdown(directory, model, exportSettings);
           count++;
+          if (result.filenameFallback) filenameFallbackCount++;
+          if (result.citationPropertyInvalid) citationPropertyInvalid = true;
           for (const change of result.tagResult.changes) {
             if (change.action === "formatted") tagTotals.formatted++;
             else if (change.action === "duplicate-removed") tagTotals.duplicates++;
@@ -163,6 +187,8 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
             key: model.key,
             title: model.title,
             outputPath: result.path,
+            citation: result.citation,
+            aliases: result.aliases,
             status: "exported",
             tagChanges: result.tagResult.changes
           });
@@ -180,6 +206,8 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
         report.push(this.strings.tagExportSummary(tagTotals.formatted, tagTotals.duplicates, tagTotals.removed));
       }
       if (regexWarnings.size) report.push(this.strings.tagPatternWarning);
+      if (filenameFallbackCount) report.push(this.strings.filenameFallback(filenameFallbackCount));
+      if (citationPropertyInvalid) report.push(this.strings.citationPropertyInvalid);
       log.warnings = [...regexWarnings].map(detail => ({
         type: "invalid-tag-regex",
         message: this.strings.tagPatternWarning,
@@ -193,7 +221,13 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const logPath = PathUtils.join(logDirectory, `zotpush-export-${timestamp}.json`);
           log.finishedAt = new Date().toISOString();
-          log.summary = { exported: count, tagChanges: tagTotals, failed: Boolean(exportError) };
+          log.summary = {
+            exported: count,
+            tagChanges: tagTotals,
+            filenameFallbacks: filenameFallbackCount,
+            citationPropertyInvalid,
+            failed: Boolean(exportError)
+          };
           await IOUtils.writeUTF8(logPath, JSON.stringify(log, null, 2), { tmpPath: logPath + ".tmp" });
           report.push(this.strings.logSaved(logPath));
         } catch (error) {
@@ -276,7 +310,16 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       exportSettings.reformatTags === true,
       exportSettings.tagRegex || this.core.DEFAULT_TAG_PATTERN
     );
-    const exportModel = { ...model, tags: tagResult.tags };
+    const citation = this.core.formatCitation(model, exportSettings.citationTemplate, this.strings);
+    const citationPropertyInvalid = Boolean(exportSettings.citationProperty) &&
+      !this.core.isSafeCustomYamlKey(exportSettings.citationProperty);
+    const exportModel = {
+      ...model,
+      tags: tagResult.tags,
+      citation,
+      citationProperty: citationPropertyInvalid ? "" : exportSettings.citationProperty,
+      aliases: this.core.buildAliases(model, citation, this.strings, exportSettings.includeCitationAlias)
+    };
     const assetRelativeDir = `./assets/zotero-${model.key}`;
     const assetDir = PathUtils.join(directory, "assets", `zotero-${model.key}`);
     for (const annotation of model.annotations) {
@@ -287,13 +330,59 @@ var ZoteroObsidianReadonlyPlugin = class ZoteroObsidianReadonlyPlugin {
       await IOUtils.copy(annotation.imageSourcePath, destination, { noOverwrite: false });
       annotation.imagePath = `${assetRelativeDir}/${imageName}`;
     }
-    const leaf = `${this.core.safeFilename(model.title, this.strings.untitled)} - ${model.key}.md`;
-    const path = PathUtils.join(directory, leaf);
-    let existing = "";
-    if (await IOUtils.exists(path)) existing = await IOUtils.readUTF8(path);
+    const filenameBase = this.core.filenameBase(model, exportSettings.filenameFormat, this.strings);
+    const matches = await this.findExistingMarkdown(directory, model);
+    const preferredPath = PathUtils.join(directory, `${filenameBase}.md`);
+    const existingFile = matches.find(match => match.path === preferredPath) || matches[0] || null;
+    const path = await this.resolveMarkdownPath(directory, filenameBase, model, existingFile);
+    let existing = existingFile?.content || "";
+    if (!existing && await IOUtils.exists(path)) existing = await IOUtils.readUTF8(path);
     const output = this.core.merge(existing, exportModel, new Date().toISOString(), this.strings);
     await IOUtils.writeUTF8(path, output, { tmpPath: path + ".tmp" });
-    return { path, tagResult };
+    if (existingFile && existingFile.path !== path) {
+      try {
+        await IOUtils.remove(existingFile.path);
+      } catch (error) {
+        this.Zotero.logError(error);
+      }
+    }
+    return {
+      path,
+      tagResult,
+      citation,
+      aliases: exportModel.aliases,
+      filenameFallback: exportSettings.filenameFormat === "citation-key" && !String(model.citationKey || "").trim(),
+      citationPropertyInvalid
+    };
+  }
+
+  async findExistingMarkdown(directory, model) {
+    const children = await IOUtils.getChildren(directory);
+    const matches = [];
+    for (const path of children) {
+      if (!PathUtils.filename(path).toLowerCase().endsWith(".md")) continue;
+      const content = await IOUtils.readUTF8(path);
+      const identity = this.core.getZoteroItemIdentity(content);
+      if (identity?.key === String(model.key) && identity.libraryID === String(model.libraryID)) {
+        matches.push({ path, content });
+      }
+    }
+    return matches;
+  }
+
+  async resolveMarkdownPath(directory, filenameBase, model, existingFile) {
+    const preferredPath = PathUtils.join(directory, `${filenameBase}.md`);
+    if (existingFile?.path === preferredPath || !(await IOUtils.exists(preferredPath))) {
+      return preferredPath;
+    }
+
+    const suffix = `${this.core.safeFilename(model.key, "item")}-${this.core.safeFilename(String(model.libraryID), "library")}`;
+    for (let index = 0; index < 1000; index++) {
+      const disambiguator = index ? `${suffix}-${index + 1}` : suffix;
+      const candidate = PathUtils.join(directory, `${filenameBase} - ${disambiguator}.md`);
+      if (existingFile?.path === candidate || !(await IOUtils.exists(candidate))) return candidate;
+    }
+    throw new Error(this.strings.filenameConflict(filenameBase));
   }
 
   alert(win, message) {

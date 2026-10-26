@@ -2,7 +2,7 @@
   <groupbox>
     <caption label="Language settings / Impostazioni lingua" />
     <vbox>
-      <label class="description" value="Automatic follows Zotero's language, with English as fallback. / Automatico segue la lingua di Zotero; inglese come ripiego." />
+      <description>Automatic follows Zotero's language, with English as fallback. / Automatico segue la lingua di Zotero; inglese come ripiego.</description>
       <hbox align="center">
         <label class="language-label" value="Language / Lingua" />
         <menulist flex="1" native="true" preference="extensions.zotero.zotpush.language">
@@ -16,12 +16,38 @@
     </vbox>
   </groupbox>
   <groupbox>
+    <caption label="Filename / Nome file" />
+    <vbox>
+      <label value="Filename format / Formato nome file" control="zotpush-filename-format" />
+      <menulist id="zotpush-filename-format" flex="1" native="true"
+                preference="extensions.zotero.zotpush.filenameFormat">
+        <menupopup>
+                  <menuitem value="citation-key" label="Citation key / Chiave citazione" />
+          <menuitem value="title-key" label="Title + Zotero key / Titolo + chiave Zotero" />
+        </menupopup>
+      </menulist>
+      <description>If the citation key is blank, the filename falls back to title + Zotero key. Existing notes are matched by Zotero item identity in front matter. / Se la chiave citazione è vuota, il nome file usa titolo + chiave Zotero. Le note esistenti vengono riconosciute tramite l'identità Zotero nel front matter.</description>
+            </vbox>
+          </groupbox>
+          <groupbox>
+            <caption label="Aliases and citation / Alias e citazione" />
+            <vbox>
+      <checkbox preference="extensions.zotero.zotpush.includeCitationAlias"
+                        label="Include citation as alias / Includi citazione negli alias" />
+              <label value="Citation template / Modello citazione" control="zotpush-citation-template" />
+      <textbox id="zotpush-citation-template" preference="extensions.zotero.zotpush.citationTemplate" flex="1" />
+      <description>Available fields: {author}, {authors}, {year}, {title}, {citationKey}, {key}. / Campi disponibili: {author}, {authors}, {year}, {title}, {citationKey}, {key}.</description>
+              <label value="Front-matter property / Proprietà front matter" control="zotpush-citation-property" />
+      <textbox id="zotpush-citation-property" preference="extensions.zotero.zotpush.citationProperty" flex="1" />
+      <description>Leave blank to omit the separate citation property. / Lascia vuoto per omettere la proprietà separata della citazione.</description>
+    </vbox>
+  </groupbox>
+  <groupbox>
     <caption label="Tag export / Esportazione tag" />
     <vbox>
       <checkbox preference="extensions.zotero.zotpush.reformatTags"
                 label="Reformat exported tags / Riformatta i tag esportati" />
-      <label class="description"
-             value="Lowercase tags and replace invalid characters with hyphens. Zotero items are never changed. / Converte i tag in minuscolo e sostituisce i caratteri non validi con trattini. Gli elementi Zotero non vengono modificati." />
+      <description>Lowercase tags and replace invalid characters with hyphens. Zotero items are never changed. / Converte i tag in minuscolo e sostituisce i caratteri non validi con trattini. Gli elementi Zotero non vengono modificati.</description>
       <label value="Replacement regex (matches become hyphens) / Espressione regex (le corrispondenze diventano trattini)" />
       <textbox preference="extensions.zotero.zotpush.tagRegex" flex="1" />
     </vbox>
@@ -31,10 +57,8 @@
     <vbox>
       <checkbox preference="extensions.zotero.zotpush.saveExportLog"
                 label="Save a JSON log for each export / Salva un registro JSON per ogni esportazione" />
-      <label class="description"
-             value="Leave the folder blank to save logs in the Markdown export folder. / Lascia vuoto per salvare i registri nella cartella di esportazione Markdown." />
-      <label class="description"
-             value="Logs include item titles and keys, output paths, and tag changes. / I registri includono titoli e chiavi degli elementi, percorsi dei file e modifiche ai tag." />
+            <description>Leave the folder blank to save logs in the Markdown export folder. / Lascia vuoto per salvare i registri nella cartella di esportazione Markdown.</description>
+            <description>Logs include item titles and keys, output paths, and tag changes. / I registri includono titoli e chiavi degli elementi, percorsi dei file e modifiche ai tag.</description>
       <label value="Log folder / Cartella dei registri" />
       <textbox preference="extensions.zotero.zotpush.exportLogDirectory" flex="1" />
     </vbox>
