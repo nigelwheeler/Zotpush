@@ -85,7 +85,8 @@ const window = {
 };
 const preferences = new Map();
 const preferenceObservers = new Map();
-const ZoteroAPI = { locale: "it-IT", getMainWindows: () => [window] };
+const loggedErrors = [];
+const ZoteroAPI = { locale: "it-IT", getMainWindows: () => [window], logError: error => loggedErrors.push(error) };
 const ServicesAPI = {
   prefs: {
     prefHasUserValue: key => preferences.has(key),
@@ -119,12 +120,20 @@ assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.ref
 assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.tagRegex"/);
 assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.saveExportLog"/);
 assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.exportLogDirectory"/);
+assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.filenameFormat"/);
+assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.includeCitationAlias"/);
+assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.citationTemplate"/);
+assert.match(preferencePaneMarkup, /preference="extensions\.zotero\.zotpush\.citationProperty"/);
 for (const preference of [
   "extensions.zotero.zotpush.language",
   "extensions.zotero.zotpush.reformatTags",
   "extensions.zotero.zotpush.tagRegex",
   "extensions.zotero.zotpush.saveExportLog",
-  "extensions.zotero.zotpush.exportLogDirectory"
+  "extensions.zotero.zotpush.exportLogDirectory",
+  "extensions.zotero.zotpush.filenameFormat",
+  "extensions.zotero.zotpush.includeCitationAlias",
+  "extensions.zotero.zotpush.citationTemplate",
+  "extensions.zotero.zotpush.citationProperty"
 ]) {
   assert.equal(preferencePaneMarkup.split(`preference="${preference}"`).length - 1, 1);
 }
@@ -137,18 +146,24 @@ const reloadedPlugin = new Plugin(ZoteroAPI, ServicesAPI, core, "zotpush-md-dev@
 assert.equal(reloadedPlugin.language, "en");
 
 const sourceModel = {
-  key: "TAGTEST01", libraryID: 1, version: 1, citationKey: "", title: "Tag test",
-  creators: [], date: "", year: "", itemType: "book", DOI: "", ISBN: "", url: "",
+  key: "TAGTEST01", libraryID: 1, version: 1, citationKey: "Smith2024", title: "Tag test",
+  creators: [{ firstName: "Jane", lastName: "Smith" }], date: "2024", year: "2024", itemType: "book", DOI: "", ISBN: "", url: "",
   collections: [], tags: ["Science & Technology"], zoteroURI: "", abstract: "",
   notes: [], annotations: []
 };
 const sourceItem = { key: sourceModel.key, isRegularItem: () => true };
 const writtenFiles = new Map();
 const alerts = [];
-global.PathUtils = { join: (...parts) => parts.join("\\") };
+global.PathUtils = {
+  join: (...parts) => parts.join("\\"),
+  filename: path => path.split("\\").pop()
+};
 global.IOUtils = {
   makeDirectory: async () => {},
-  exists: async () => false,
+  getChildren: async directory => [...writtenFiles.keys()].filter(path => path.startsWith(`${directory}\\`)),
+  exists: async path => writtenFiles.has(path),
+  readUTF8: async path => writtenFiles.get(path) || "",
+  remove: async path => writtenFiles.delete(path),
   copy: async () => {},
   writeUTF8: async (path, value) => writtenFiles.set(path, value)
 };
@@ -160,15 +175,27 @@ preferences.set(plugin.reformatTagsPref, true);
 preferences.set(plugin.tagRegexPref, core.DEFAULT_TAG_PATTERN);
 preferences.set(plugin.saveExportLogPref, true);
 preferences.set(plugin.exportLogDirectoryPref, "C:\\ExportLogs");
+preferences.set(plugin.filenameFormatPref, "citation-key");
+preferences.set(plugin.citationTemplatePref, "{author} ({year})");
+preferences.set(plugin.citationPropertyPref, "harvard");
+preferences.set(plugin.includeCitationAliasPref, true);
+writtenFiles.set("C:\\Markdown\\Smith2024.md", "unrelated file must not be overwritten");
+writtenFiles.set("C:\\Markdown\\OtherLibrary.md", core.renderYAML({ ...sourceModel, libraryID: 2 }, "2026-08-26T00:00:00Z"));
 
 (async () => {
   await plugin.exportSelection(window);
-  const markdownPath = [...writtenFiles.keys()].find(path => path.endsWith("TAGTEST01.md"));
+  const markdownPath = [...writtenFiles.keys()].find(path => path.includes("TAGTEST01-1") && path.endsWith(".md"));
   const logPath = [...writtenFiles.keys()].find(path => path.endsWith(".json"));
   assert.ok(markdownPath);
   assert.ok(logPath);
   assert.ok(logPath.startsWith("C:\\ExportLogs"));
   assert.match(writtenFiles.get(markdownPath), /tags:\n  - "science-technology"/);
+  assert.match(writtenFiles.get(markdownPath), /harvard: "Smith \(2024\)"/);
+  assert.match(writtenFiles.get(markdownPath), /aliases:\n  - "Tag test - TAGTEST01"/);
+  assert.match(writtenFiles.get(markdownPath), /  - "Smith2024"/);
+  assert.match(writtenFiles.get(markdownPath), /  - "Smith \(2024\)"/);
+  assert.equal(writtenFiles.get("C:\\Markdown\\Smith2024.md"), "unrelated file must not be overwritten");
+  assert.match(writtenFiles.get("C:\\Markdown\\OtherLibrary.md"), /zotero_library_id: "2"/);
   assert.deepEqual(sourceModel.tags, ["Science & Technology"]);
   assert.match(alerts[0], /1 reformatted/);
   const exportLog = JSON.parse(writtenFiles.get(logPath));
@@ -177,8 +204,14 @@ preferences.set(plugin.exportLogDirectoryPref, "C:\\ExportLogs");
   assert.equal(exportLog.summary.exported, 1);
   preferences.set(plugin.tagRegexPref, "[");
   preferences.set(plugin.exportLogDirectoryPref, "C:\\ExportLogsFallback");
+  preferences.set(plugin.filenameFormatPref, "title-key");
+  sourceModel.title = "Changed title";
   await plugin.exportSelection(window);
   const fallbackLogPath = [...writtenFiles.keys()].find(path => path.startsWith("C:\\ExportLogsFallback") && path.endsWith(".json"));
+  const renamedMarkdownPath = "C:\\Markdown\\Changed title - TAGTEST01.md";
+  assert.ok(writtenFiles.has(renamedMarkdownPath));
+  assert.equal(writtenFiles.has(markdownPath), false);
+  assert.equal(writtenFiles.get("C:\\Markdown\\Smith2024.md"), "unrelated file must not be overwritten");
   assert.ok(fallbackLogPath);
   assert.match(alerts[1], /replacement regex is invalid/i);
   const fallbackLog = JSON.parse(writtenFiles.get(fallbackLogPath));
@@ -203,6 +236,39 @@ preferences.set(plugin.exportLogDirectoryPref, "C:\\ExportLogs");
   assert.equal(core.normalizeTags(["C++"], true, "[").error !== null, true);
   assert.deepEqual(core.normalizeTags(["Science & Tech"], true, "&").tags, ["science-tech"]);
   assert.equal(core.DEFAULT_TAG_PATTERN, "[^\\p{L}\\p{N}/_-]+");
+  const titleModel = {
+    ...item,
+    key: "ABCD1234",
+    title: "A Study of Tests",
+    citationKey: "Smith2024",
+    year: "2024",
+    creators: [{ firstName: "Jane", lastName: "Smith" }]
+  };
+  assert.equal(core.filenameBase(titleModel, "citation-key", english), "Smith2024");
+  assert.equal(core.filenameBase({ ...titleModel, citationKey: "" }, "citation-key", english), "A Study of Tests - ABCD1234");
+  assert.equal(core.filenameBase(titleModel, "title-key", english), "A Study of Tests - ABCD1234");
+  const harvardCitation = core.formatCitation(titleModel, "{author} ({year})", english);
+  assert.equal(harvardCitation, "Smith (2024)");
+  assert.equal(core.formatCitation({ creators: [], year: "", title: "Untitled" }, "{author} ({year})", english), "Unknown author (n.d.)");
+  assert.equal(core.formatCitation({ creators: [
+    { firstName: "Jane", lastName: "Smith" },
+    { firstName: "John", lastName: "Jones" }
+  ], year: "2024" }, "{author} ({year})", english), "Smith and Jones (2024)");
+  assert.deepEqual(core.buildAliases(titleModel, harvardCitation, english), [
+    "A Study of Tests - ABCD1234", "Smith2024", "Smith (2024)"
+  ]);
+  const citationYaml = core.renderYAML({
+    ...titleModel,
+    aliases: core.buildAliases(titleModel, harvardCitation, english),
+    citation: harvardCitation,
+    citationProperty: "harvard"
+  }, "2026-08-26T00:00:00Z");
+  assert.match(citationYaml, /aliases:\n  - "A Study of Tests - ABCD1234"/);
+  assert.match(citationYaml, /harvard: "Smith \(2024\)"/);
+  assert.equal(core.getZoteroItemKey(citationYaml), "ABCD1234");
+  assert.equal(core.getZoteroItemKey("---\ntitle: no identity\n---"), "");
+  assert.equal(core.isSafeCustomYamlKey("harvard"), true);
+  assert.equal(core.isSafeCustomYamlKey("aliases"), false);
   plugin.stop();
   assert.equal(preferenceObservers.size, 0);
   console.log("Test core superati");
