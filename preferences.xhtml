@@ -15,4 +15,28 @@
       </hbox>
     </vbox>
   </groupbox>
+  <groupbox>
+    <caption label="Tag export / Esportazione tag" />
+    <vbox>
+      <checkbox preference="extensions.zotero.zotpush.reformatTags"
+                label="Reformat exported tags / Riformatta i tag esportati" />
+      <label class="description"
+             value="Lowercase tags and replace invalid characters with hyphens. Zotero items are never changed. / Converte i tag in minuscolo e sostituisce i caratteri non validi con trattini. Gli elementi Zotero non vengono modificati." />
+      <label value="Replacement regex (matches become hyphens) / Espressione regex (le corrispondenze diventano trattini)" />
+      <textbox preference="extensions.zotero.zotpush.tagRegex" flex="1" />
+    </vbox>
+  </groupbox>
+  <groupbox>
+    <caption label="Export log / Registro esportazioni" />
+    <vbox>
+      <checkbox preference="extensions.zotero.zotpush.saveExportLog"
+                label="Save a JSON log for each export / Salva un registro JSON per ogni esportazione" />
+      <label class="description"
+             value="Leave the folder blank to save logs in the Markdown export folder. / Lascia vuoto per salvare i registri nella cartella di esportazione Markdown." />
+      <label class="description"
+             value="Logs include item titles and keys, output paths, and tag changes. / I registri includono titoli e chiavi degli elementi, percorsi dei file e modifiche ai tag." />
+      <label value="Log folder / Cartella dei registri" />
+      <textbox preference="extensions.zotero.zotpush.exportLogDirectory" flex="1" />
+    </vbox>
+  </groupbox>
 </vbox>
